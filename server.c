@@ -24,6 +24,13 @@ typedef struct request
   int m_socket;
   char  m_szRequest[MAX_REQUEST_LENGTH];
 } request_t;
+//Structure for a single worker
+typedef struct worker_struct
+{
+  int thread_id;
+  char cwd[MAX_REQUEST_LENGTH];
+  int num_requests;
+}  workder_t;
 
 /* The mutex lock */
 pthread_mutex_t request_queue_access= PTHREAD_MUTEX_INITIALIZER;;
@@ -120,7 +127,9 @@ void * worker(void * arg)
 
   return NULL;
 }
-
+/*run server as following
+./web_server port path num_dispatchers num_workers qlen [cache_entries]
+*/
 int main(int argc, char **argv)
 {
         //Error check first.
@@ -130,12 +139,11 @@ int main(int argc, char **argv)
     return -1;
   }
 
-  printf("Call init() first and make a dispather and worker threads\n");
 //initializes the connection once in the main thread
   int port = atoi(argv[1]);
   init(port);
   /*
-create an array of dispathers and an array of workers,
+create an array of dispatchers and an array of workers,
 each consists of threadId, regNum, path
   */
   int i;
@@ -152,13 +160,32 @@ each consists of threadId, regNum, path
   }
   //loog through each worker to create each worker thread
   for (i=0; i<num_workers ; i++){
+    worker_t worker_struct;
+    worker_struct.thread_id = i;
+    strcpy(worker_struct.cwd, argv[2]);
+    worker_struct.num_requests =0;
     if((error=pthread_create(&workers[i], NULL, worker, NULL))!=0){
-      fprintf(stderr, )
+      fprintf(stderr, "fail to create worker thread %d: %s", i+1, strerror(error));
+      return -1;
     }
   }
-
-
-
-
+  printf("Call init() first and make a dispatcher and worker threads\n");
+  // join/wait the dispatch threads
+for(i=0; i< num_dispatchers; i++){
+  if ((error=pthread_join(dispatchers[i]), NULL)){
+    fprintf(stderr,"failed to join the dispatch thread %d: %s", i+1, strerror(error));
+  }
+}
+  // join/wait the worker threads
+  for(i=0; i< num_workers; i++){
+    if ((error=pthread_join(workers[i]), NULL)){
+      fprintf(stderr,"failed to join the worker thread %d: %s", i+1, strerror(error));
+    }
+  }
+  /*clean up
+  close the log file
+  destroy the mutex
+  free any malloc
+  */
   return 0;
 }
