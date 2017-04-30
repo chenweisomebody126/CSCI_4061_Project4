@@ -41,7 +41,7 @@ pthread_cond_t free_slot = PTHREAD_COND_INITIALIZER;
 
 /* the bounded buffer to store request*/
 request_t request_queue[MAX_QUEUE_SIZE];
-
+int queue_size;
 /* request counter and
 in for insert position and
 out for push position
@@ -67,7 +67,7 @@ void push_queue(request_t* request){
   while(count == 0){
     pthread_cond_wait(&some_request, &request_queue_access);
     request = request_queue[out];
-    out = (out-1)%MAX_QUEUE_SIZE;
+    out = (out-1)%queue_size;
     count--;
   }
   pthread_cond_signal(&free_slot);
@@ -132,15 +132,41 @@ void * worker(void * arg)
 */
 int main(int argc, char **argv)
 {
-        //Error check first.
+  //first error checking for the arguments in "./web_server port path num_dispatchers num_workers qlen [cache_entries]".
   if(argc != 6 && argc != 7)
   {
-    printf("usage: %s port path num_dispatcher num_workers queue_length [cache_size]\n", argv[0]);
+    printf("usage: %s port path num_dispatchers num_workers queue_length [cache_size]\n", argv[0]);
     return -1;
   }
-
-//initializes the connection once in the main thread
+  //check port
   int port = atoi(argv[1]);
+  if(port <1025 || port >65535){
+    fprintf(stderr, "port number should fall in 1025-65535, please input a valid port number\n");
+    return -1;
+  }
+  //check path
+  if(chdir(argv[-2])==-1){
+    printf(stderr, "Invalid path! Failed to change to current working directory\n");
+    return -1;
+  }
+  //check num_dispatchers
+  int num_dispatchers = atoi(argv[3]);
+  if(num_dispatchers > MAX_THREADS){
+    fprintf(stderr, "Invalid num_dispatchers! It exceeds the maximum number of dispath threads\n");
+  }
+  //check num_workers
+  int num_workers = atoi(argv[4]);
+  if (num_workers> MAX_THREADS){
+    fprintf(stderr, "Invalid num_workers! It exceeds the maximum number of workers\n");
+    return -1;
+  }
+  //check length of queue
+  queue_size = atoi(argv[5]);
+  if (queue_size > MAX_QUEUE_SIZE){
+    fprintf(stderr, "Invalid queue length! It exceeds the maximum length of queue\n");
+    return -1;
+  }
+//initializes the connection once in the main thread
   init(port);
   /*
 create an array of dispatchers and an array of workers,
@@ -149,8 +175,6 @@ each consists of threadId, regNum, path
   int i;
   int error;
   pthread_t dispatchers[MAX_THREADS], workers[MAX_THREADS];
-  num_dispatchers = atoi(argv[3]);
-  num_workers = atoi(argv[4]);
   //loop through each dispatcher to create dispatch thread
   for (i=0; i<num _dispatchers; i++){
     if ((error = pthread_create(&dispatchers[i], NULL, dispatch, NULL))!=0){
