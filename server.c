@@ -93,11 +93,30 @@ void * dispatch(void * arg)
 void * worker(void * arg)
 {
   request_t* request;
+  char* content_type;
+
+  worker_t* worker_struct;
+  memcpy(worker_struct, (worker_t *) arg, sizeof(worker_t));
   //repeatedly monitor the request queue and pick up the request from it
   while (true){
     push_queue(request);
+    /*serve the request back to the client by using return_result()
+    if there was any problem with accessing the file, use return_error() instead
+    */
+    //read the file from fd
+
+    //open the file to obtain file pointer
+
+    //obtain the actual size of file
+
+    //read from file num_bytes_read
+
+    //set content_type according to the suffix
+
+    if(return_result(request->m_socket, content_type,request->m_szRequest, 1024)!=0){
+      return_error(request->m_socket, request->m_szRequest);
+    }
   }
-  //serve the request back to the client
 
   return NULL;
 }
@@ -113,8 +132,30 @@ int main(int argc, char **argv)
 
   printf("Call init() first and make a dispather and worker threads\n");
 //initializes the connection once in the main thread
-  init(argv[1]);
-
+  int port = atoi(argv[1]);
+  init(port);
+  /*
+create an array of dispathers and an array of workers,
+each consists of threadId, regNum, path
+  */
+  int i;
+  int error;
+  pthread_t dispatchers[MAX_THREADS], workers[MAX_THREADS];
+  num_dispatchers = atoi(argv[3]);
+  num_workers = atoi(argv[4]);
+  //loop through each dispatcher to create dispatch thread
+  for (i=0; i<num _dispatchers; i++){
+    if ((error = pthread_create(&dispatchers[i], NULL, dispatch, NULL))!=0){
+      fprintf(stderr, "fail to create dispatch thread %d: %s", i+1, strerror(error));
+      return -1;
+    }
+  }
+  //loog through each worker to create each worker thread
+  for (i=0; i<num_workers ; i++){
+    if((error=pthread_create(&workers[i], NULL, worker, NULL))!=0){
+      fprintf(stderr, )
+    }
+  }
 
 
 
