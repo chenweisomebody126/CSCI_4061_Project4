@@ -56,10 +56,10 @@ void insert_queue(request_t* request){
   pthread_mutex_lock(&request_queue_access);
   while (count == MAX_QUEUE_SIZE){
     pthread_cond_wait(&free_slot, &request_queue_access);
-    request_queue[in] =*request;
-    in = (in+1)%queue_size;
-    count++;
   }
+  request_queue[in] =*request;
+  in = (in+1)%queue_size;
+  count++;
   pthread_cond_signal(&some_request);
   pthread_mutex_unlock(&request_queue_access);
 }
@@ -68,10 +68,10 @@ void push_queue(request_t* request){
   pthread_mutex_lock(&request_queue_access);
   while(count == 0){
     pthread_cond_wait(&some_request, &request_queue_access);
-    *request = request_queue[out];
-    out = (out-1)%queue_size;
-    count--;
   }
+  *request = request_queue[out];
+  out = (out+1)%queue_size;
+  count--;
   pthread_cond_signal(&free_slot);
   pthread_mutex_unlock(&request_queue_access);
 }
@@ -97,6 +97,7 @@ void * dispatch(void * arg)
   int fd;
   char filename[1024];
   request_t * request;
+  request = (request_t*) malloc(sizeof(request_t));
   while ((fd =accept_connection())>=0){
     //repeatedly read the request from the connection
     if (get_request(fd, filename)!=0){
@@ -104,8 +105,13 @@ void * dispatch(void * arg)
       printf("get_request failure due to faulty requests\n");
       continue;
     }
+    printf("after get_request\n");
+
+    printf("before copy fd\n");
     request->m_socket =fd;
+    printf("before copy filename\n");
     strcpy(request->m_szRequest,filename);
+    printf("before insert_queue\n");
     insert_queue(request);
   }
   return NULL;
@@ -114,12 +120,13 @@ void * dispatch(void * arg)
 void * worker(void * arg)
 {
   int thread_id =* (int*)arg;
-  request_t* request;
   int num_requests=0;
   int file_size;
   char *read_buff;
   char content_type[15];
   int num_bytes_read;
+  request_t * request;
+  request = (request_t*) malloc(sizeof(request_t));
   //repeatedly monitor the request queue and pick up the request from it
   while (1){
     push_queue(request);
@@ -130,16 +137,19 @@ void * worker(void * arg)
     char path[MAX_REQUEST_LENGTH];
     strcpy(path, root_directory);
     strcat(path, request->m_szRequest);
+    printf("path is %s\n", path);
     //open the file to obtain file pointer
     FILE * new_fp;
     if ((new_fp = fopen(path, "rb"))==NULL){
       printf("failed to open file in path:%s\n", path);
       log_request(thread_id, num_requests, request, -1);
+      continue;
     }
     //obtain the actual size of file
     struct stat stat_struct;
     if(stat(path, &stat_struct)>=0){
       file_size = stat_struct.st_size;
+      printf("file_size is %d\n", file_size);
     }
     else{
       fprintf(stderr, "failed to obtain the actual size of the file via stat\n");
@@ -149,7 +159,7 @@ void * worker(void * arg)
     read_buff = (char*) malloc(sizeof(char)* (file_size+1));
     num_bytes_read = fread(read_buff, sizeof(char), file_size, new_fp);
     if(num_bytes_read != file_size){
-      fprintf(stderr, "failed to read file %s with size %d", path, file_size);
+      fprintf(stderr, "failed to read file %s with size %d\n", path, file_size);
       log_request(thread_id, num_requests, request, num_bytes_read);
       continue;
     }
@@ -165,7 +175,7 @@ void * worker(void * arg)
       strcpy(content_type, "text/plain");
 
     //return result/error to client
-    if(return_result(request->m_socket, content_type,request->m_szRequest, 1024)!=0){
+    if(return_result(request->m_socket, content_type,read_buff, file_size)!=0){
       return_error(request->m_socket, request->m_szRequest);
     }
     //log
@@ -180,6 +190,7 @@ void * worker(void * arg)
 */
 int main(int argc, char **argv)
 {
+  printf("main function runs\n");
   //first error checking for the arguments in "./web_server port path num_dispatchers num_workers qlen [cache_entries]".
   if(argc != 6 && argc != 7)
   {
@@ -193,8 +204,8 @@ int main(int argc, char **argv)
     return -1;
   }
   //check path
-  root_directory = malloc(sizeof(char) * strlen(argv[-2]));
-  strcpy(root_directory,argv[-2]);
+  root_directory = (char*)malloc(sizeof(char) * strlen(argv[2]));
+  strcpy(root_directory,argv[2]);
   if(chdir(root_directory)==-1){
     printf(stderr, "Invalid path! Failed to change to current working directory\n");
     return -1;
@@ -203,6 +214,7 @@ int main(int argc, char **argv)
   int num_dispatchers = atoi(argv[3]);
   if(num_dispatchers > MAX_THREADS){
     fprintf(stderr, "Invalid num_dispatchers! It exceeds the maximum number of dispath threads\n");
+    return -1;
   }
   //check num_workers
   int num_workers = atoi(argv[4]);
@@ -216,6 +228,7 @@ int main(int argc, char **argv)
     fprintf(stderr, "Invalid queue length! It exceeds the maximum length of queue\n");
     return -1;
   }
+  printf("before allocate memory to request queue\n");
   //allocate memory to request queue based on input lenght
   if ((request_queue = (request_t*) malloc(queue_size * sizeof(request_t)))==NULL){
     fprintf(stderr, "failed to allocate memory to the request queue\n");
@@ -223,6 +236,7 @@ int main(int argc, char **argv)
   };
   //Create log file
   log_fp = fopen("web_server_log", "w+");
+  printf("have created the log and plan to inti(port)\n");
   //initializes the connection once in the main thread
   init(port);
   /*
@@ -239,11 +253,12 @@ each consists of threadId, regNum, path
       return -1;
     }
   }
+  printf("have created the dispatchers and plan to create worker\n");
   //loog through each worker to create each worker thread
   int thread_ids[num_workers];
   for (i=0; i<num_workers ; i++){
     thread_ids[i]=i;
-    if((error=pthread_create(&workers[i], NULL, worker, (void*)thread_ids[i]))!=0){
+    if((error=pthread_create(&workers[i], NULL, worker, (void*)&thread_ids[i]))!=0){
       fprintf(stderr, "fail to create worker thread %d: %s\n", i+1, strerror(error));
       return -1;
     }
