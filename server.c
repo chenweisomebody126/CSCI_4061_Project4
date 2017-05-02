@@ -24,13 +24,14 @@ typedef struct request
   int m_socket;
   char  m_szRequest[MAX_REQUEST_LENGTH];
 } request_t;
-//Structure for a single worker
-typedef struct worker_struct
-{
-  int thread_id;
-  char cwd[MAX_REQUEST_LENGTH];
-  int num_requests;
-}  workder_t;
+/*Structure for a single worker
+since we need to record
+thread_id,
+number of requests this specific worker thread has handled so far
+file descriptor given by accept_connection for this request
+bytes/error returned
+*/
+
 
 /* The mutex lock */
 pthread_mutex_t request_queue_access= PTHREAD_MUTEX_INITIALIZER;;
@@ -40,22 +41,21 @@ pthread_cond_t some_request = PTHREAD_COND_INITIALIZER;
 pthread_cond_t free_slot = PTHREAD_COND_INITIALIZER;
 
 /* the bounded buffer to store request*/
-request_t request_queue[MAX_QUEUE_SIZE];
+request_t* request_queue;
 int queue_size;
-/* request counter and
-in for insert position and
-out for push position
-*/
+/* request counter and in for insert position and out for push position */
 int count=0;
 int in=0;
 int out=0;
+//root direcotry of web
+char* root_directory;
 
 void insert_queue(request_t* request){
   pthread_mutex_lock(&request_queue_access);
   while (count == MAX_QUEUE_SIZE){
     pthread_cond_wait(&free_slot, &request_queue_access);
     request_queue[in] =request;
-    in = (in+1)%MAX_QUEUE_SIZE;
+    in = (in+1)%queue_size;
     count++;
   }
   pthread_cond_signal(&some_request);
@@ -101,28 +101,58 @@ void * worker(void * arg)
 {
   request_t* request;
   char* content_type;
-
-  worker_t* worker_struct;
-  memcpy(worker_struct, (worker_t *) arg, sizeof(worker_t));
+  int num_requests=0;
+  int file_size;
+  char *read_buff;
+  char content_type[15];
   //repeatedly monitor the request queue and pick up the request from it
   while (true){
     push_queue(request);
     /*serve the request back to the client by using return_result()
     if there was any problem with accessing the file, use return_error() instead
     */
-    //read the file from fd
-
+    //obtain the file path to read the file associated wot the fd
+    char path[MAX_REQUEST_LENGTH];
+    strcpy(path, root_directory);
+    strcat(path, request.m_szRequest);
     //open the file to obtain file pointer
-
+    FILE * new_fp;
+    if (new_fp = fopen(path, "rb")==NULL){
+      printf("failed to open file in path:%s", path);
+    }
     //obtain the actual size of file
-
-    //read from file num_bytes_read
-
+    struct stat stat_struct;
+    if(stat(path, &stat_struct)>=0){
+      file_size = stat_struct.st_size;
+    }
+    else{
+      fprintf(stderr, "failed to obtain the actual size of the file via stat");
+      continue;
+    }
+    //read num_bytes_read from file
+    read_buff = (char*) malloc(sizeof(char)* (file_size+1));
+    num_bytes_read = fread(read_buff, sizeof(char), file_size, new_fp);
+    if(num_bytes_read != file_size){
+      fprintf(stderr, "failed to read file %s with size %d", path, file_size);
+      continue；
+    }
+    fclose(new_fp);
     //set content_type according to the suffix
+      if(strstr(request.m_szRequest, ".html") || strstr(request.m_szRequest, ".htm") )
+        strcpy(content_type, "text/html");
+      else if (strstr(request.m_szRequest, ".jpg"))
+        strcpy(content_type, "image/jpeg");
+      else if (strstr(request.m_szRequest, ".gif"))
+        strcpy(content_type, "image/gif");
+      else
+        strcpy(content_type, "text/plain");
 
+    //return result/error to client
     if(return_result(request->m_socket, content_type,request->m_szRequest, 1024)!=0){
       return_error(request->m_socket, request->m_szRequest);
     }
+    //log
+    num_requests++;
   }
 
   return NULL;
@@ -145,7 +175,9 @@ int main(int argc, char **argv)
     return -1;
   }
   //check path
-  if(chdir(argv[-2])==-1){
+  root_directory = malloc(sizeof(char) * strlen(argv[-2]));
+  strcpy(root_directory,argv[-2]);
+  if(chdir(root_directory)==-1){
     printf(stderr, "Invalid path! Failed to change to current working directory\n");
     return -1;
   }
@@ -166,6 +198,11 @@ int main(int argc, char **argv)
     fprintf(stderr, "Invalid queue length! It exceeds the maximum length of queue\n");
     return -1;
   }
+  //allocate memory to request queue based on input lenght
+  if (request_queue = malloc(request_t*) mallo(queue_size * of(request_t))==NULL){
+    fprintf(stderr, "failed to allocate memory to the request queue\n");
+    return -1;
+  };
 //initializes the connection once in the main thread
   init(port);
   /*
@@ -195,11 +232,11 @@ each consists of threadId, regNum, path
   }
   printf("Call init() first and make a dispatcher and worker threads\n");
   // join/wait the dispatch threads
-for(i=0; i< num_dispatchers; i++){
-  if ((error=pthread_join(dispatchers[i]), NULL)){
-    fprintf(stderr,"failed to join the dispatch thread %d: %s", i+1, strerror(error));
+  for(i=0; i< num_dispatchers; i++){
+    if ((error=pthread_join(dispatchers[i]), NULL)){
+      fprintf(stderr,"failed to join the dispatch thread %d: %s", i+1, strerror(error));
+    }
   }
-}
   // join/wait the worker threads
   for(i=0; i< num_workers; i++){
     if ((error=pthread_join(workers[i]), NULL)){
@@ -211,5 +248,7 @@ for(i=0; i< num_dispatchers; i++){
   destroy the mutex
   free any malloc
   */
+  free(request_queue);
+  free(root_directory);
   return 0;
 }
