@@ -56,7 +56,7 @@ void insert_queue(request_t* request){
   pthread_mutex_lock(&request_queue_access);
   while (count == MAX_QUEUE_SIZE){
     pthread_cond_wait(&free_slot, &request_queue_access);
-    request_queue[in] =request;
+    request_queue[in] =*request;
     in = (in+1)%queue_size;
     count++;
   }
@@ -68,7 +68,7 @@ void push_queue(request_t* request){
   pthread_mutex_lock(&request_queue_access);
   while(count == 0){
     pthread_cond_wait(&some_request, &request_queue_access);
-    request = request_queue[out];
+    *request = request_queue[out];
     out = (out-1)%queue_size;
     count--;
   }
@@ -80,10 +80,10 @@ void log_request(int thread_id, int num_requests, request_t* request, int log_co
   pthread_mutex_lock(&log_access);
   //error for file not found
   if (log_content<0)
-    fprintf(log_fp, "[%d][%d][%d][%s][%s]\n", thread_id, num_requests, request.m_socket, request.m_szRequest, "File not found");
+    fprintf(log_fp, "[%d][%d][%d][%s][%s]\n", thread_id, num_requests, request->m_socket, request->m_szRequest, "File not found");
   //print num_bytes_read to log
   else
-    fprintf(log_fp, "[%d][%d][%d][%s][%d]\n", thread_id, num_requests, request.m_socket, request.m_szRequest, log_content);
+    fprintf(log_fp, "[%d][%d][%d][%s][%d]\n", thread_id, num_requests, request->m_socket, request->m_szRequest, log_content);
   fflush(log_fp);
   pthread_mutex_unlock(&log_access);
 }
@@ -97,7 +97,7 @@ void * dispatch(void * arg)
   int fd;
   char filename[1024];
   request_t * request;
-  while (((fd =accept_connection())>=0){
+  while ((fd =accept_connection())>=0){
     //repeatedly read the request from the connection
     if (get_request(fd, filename)!=0){
       //when get faulty request, do NOT exit, but recover it by "continue"
@@ -113,15 +113,15 @@ void * dispatch(void * arg)
 
 void * worker(void * arg)
 {
-  int thread_id = *arg;
+  int thread_id =* (int*)arg;
   request_t* request;
-  char* content_type;
   int num_requests=0;
   int file_size;
   char *read_buff;
   char content_type[15];
+  int num_bytes_read;
   //repeatedly monitor the request queue and pick up the request from it
-  while (true){
+  while (1){
     push_queue(request);
     /*serve the request back to the client by using return_result()
     if there was any problem with accessing the file, use return_error() instead
@@ -132,7 +132,7 @@ void * worker(void * arg)
     strcat(path, request->m_szRequest);
     //open the file to obtain file pointer
     FILE * new_fp;
-    if (new_fp = fopen(path, "rb")==NULL){
+    if ((new_fp = fopen(path, "rb"))==NULL){
       printf("failed to open file in path:%s\n", path);
       log_request(thread_id, num_requests, request, -1);
     }
@@ -151,7 +151,7 @@ void * worker(void * arg)
     if(num_bytes_read != file_size){
       fprintf(stderr, "failed to read file %s with size %d", path, file_size);
       log_request(thread_id, num_requests, request, num_bytes_read);
-      continue；
+      continue;
     }
     fclose(new_fp);
     //set content_type according to the suffix
@@ -172,6 +172,7 @@ void * worker(void * arg)
     num_requests++;
     log_request(thread_id, num_requests, request, num_bytes_read);
 
+  }
   return NULL;
 }
 /*run server as following
@@ -216,7 +217,7 @@ int main(int argc, char **argv)
     return -1;
   }
   //allocate memory to request queue based on input lenght
-  if (request_queue = malloc(request_t*) mallo(queue_size * of(request_t))==NULL){
+  if ((request_queue = (request_t*) malloc(queue_size * sizeof(request_t)))==NULL){
     fprintf(stderr, "failed to allocate memory to the request queue\n");
     return -1;
   };
@@ -232,7 +233,7 @@ each consists of threadId, regNum, path
   int error;
   pthread_t dispatchers[MAX_THREADS], workers[MAX_THREADS];
   //loop through each dispatcher to create dispatch thread
-  for (i=0; i<num _dispatchers; i++){
+  for (i=0; i<num_dispatchers; i++){
     if ((error = pthread_create(&dispatchers[i], NULL, dispatch, NULL))!=0){
       fprintf(stderr, "fail to create dispatch thread %d: %s\n", i+1, strerror(error));
       return -1;
@@ -250,13 +251,13 @@ each consists of threadId, regNum, path
   printf("Call init() first and make a dispatcher and worker threads\n");
   // join/wait the dispatch threads
   for(i=0; i< num_dispatchers; i++){
-    if ((error=pthread_join(dispatchers[i]), NULL)){
+    if (error=pthread_join(dispatchers[i], NULL)){
       fprintf(stderr,"failed to join the dispatch thread %d: %s\n", i+1, strerror(error));
     }
   }
   // join/wait the worker threads
   for(i=0; i< num_workers; i++){
-    if ((error=pthread_join(workers[i]), NULL)){
+    if (error=pthread_join(workers[i], NULL)){
       fprintf(stderr,"failed to join the worker thread %d: %s\n", i+1, strerror(error));
     }
   }
