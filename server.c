@@ -34,8 +34,8 @@ bytes/error returned
 
 
 /* The mutex lock */
-pthread_mutex_t request_queue_access= PTHREAD_MUTEX_INITIALIZER;;
-
+pthread_mutex_t request_queue_access= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t log_access =  PTHREAD_MUTEX_INITIALIZER;
 /* the condiitonal variables */
 pthread_cond_t some_request = PTHREAD_COND_INITIALIZER;
 pthread_cond_t free_slot = PTHREAD_COND_INITIALIZER;
@@ -87,7 +87,7 @@ void * dispatch(void * arg)
     //repeatedly read the request from the connection
     if (get_request(fd, filename)!=0){
       //when get faulty request, do NOT exit, but recover it by "continue"
-      printf("get_request failure due to faulty requests");
+      printf("get_request failure due to faulty requests\n");
       continue;
     }
     request->m_socket =fd;
@@ -118,7 +118,7 @@ void * worker(void * arg)
     //open the file to obtain file pointer
     FILE * new_fp;
     if (new_fp = fopen(path, "rb")==NULL){
-      printf("failed to open file in path:%s", path);
+      printf("failed to open file in path:%s\n", path);
     }
     //obtain the actual size of file
     struct stat stat_struct;
@@ -126,7 +126,7 @@ void * worker(void * arg)
       file_size = stat_struct.st_size;
     }
     else{
-      fprintf(stderr, "failed to obtain the actual size of the file via stat");
+      fprintf(stderr, "failed to obtain the actual size of the file via stat\n");
       continue;
     }
     //read num_bytes_read from file
@@ -203,7 +203,9 @@ int main(int argc, char **argv)
     fprintf(stderr, "failed to allocate memory to the request queue\n");
     return -1;
   };
-//initializes the connection once in the main thread
+  //Create log file
+  log_fp = fopen("web_server_log", "w+");
+  //initializes the connection once in the main thread
   init(port);
   /*
 create an array of dispatchers and an array of workers,
@@ -215,18 +217,21 @@ each consists of threadId, regNum, path
   //loop through each dispatcher to create dispatch thread
   for (i=0; i<num _dispatchers; i++){
     if ((error = pthread_create(&dispatchers[i], NULL, dispatch, NULL))!=0){
-      fprintf(stderr, "fail to create dispatch thread %d: %s", i+1, strerror(error));
+      fprintf(stderr, "fail to create dispatch thread %d: %s\n", i+1, strerror(error));
       return -1;
     }
   }
   //loog through each worker to create each worker thread
+  int args[num_workers];
   for (i=0; i<num_workers ; i++){
     worker_t worker_struct;
     worker_struct.thread_id = i;
     strcpy(worker_struct.cwd, argv[2]);
     worker_struct.num_requests =0;
-    if((error=pthread_create(&workers[i], NULL, worker, NULL))!=0){
-      fprintf(stderr, "fail to create worker thread %d: %s", i+1, strerror(error));
+
+    args[i]=i;
+    if((error=pthread_create(&workers[i], NULL, worker, (void*)args[i]))!=0){
+      fprintf(stderr, "fail to create worker thread %d: %s\n", i+1, strerror(error));
       return -1;
     }
   }
@@ -234,13 +239,13 @@ each consists of threadId, regNum, path
   // join/wait the dispatch threads
   for(i=0; i< num_dispatchers; i++){
     if ((error=pthread_join(dispatchers[i]), NULL)){
-      fprintf(stderr,"failed to join the dispatch thread %d: %s", i+1, strerror(error));
+      fprintf(stderr,"failed to join the dispatch thread %d: %s\n", i+1, strerror(error));
     }
   }
   // join/wait the worker threads
   for(i=0; i< num_workers; i++){
     if ((error=pthread_join(workers[i]), NULL)){
-      fprintf(stderr,"failed to join the worker thread %d: %s", i+1, strerror(error));
+      fprintf(stderr,"failed to join the worker thread %d: %s\n", i+1, strerror(error));
     }
   }
   /*clean up
@@ -248,6 +253,15 @@ each consists of threadId, regNum, path
   destroy the mutex
   free any malloc
   */
+  if(pthread_mutex_destroy(&request_queue_access))
+    fprintf(stderr, "failed to destroy mutex lock request_queue_access\n");
+  if(pthread_mutex_destroy(&log_access))
+    fprintf(stderr, "failed to destropy muxtex lock log_access\n");
+  if(pthread_cond_destroy(&some_request))
+  fprintf(stderr, "failed to destropy conditional variable some_request\n");
+  if(pthread_cond_destroy(&free_slot))
+  fprintf(stderr, "failed to destropy conditional variable free_slot\n");
+
   free(request_queue);
   free(root_directory);
   return 0;
