@@ -49,6 +49,8 @@ int in=0;
 int out=0;
 //root direcotry of web
 char* root_directory;
+//log file fp
+FILE *log_fp;
 
 void insert_queue(request_t* request){
   pthread_mutex_lock(&request_queue_access);
@@ -72,6 +74,18 @@ void push_queue(request_t* request){
   }
   pthread_cond_signal(&free_slot);
   pthread_mutex_unlock(&request_queue_access);
+}
+
+void log_request(int thread_id, int num_requests, request_t* request, int log_content){
+  pthread_mutex_lock(&log_access);
+  //error for file not found
+  if (log_content<0)
+    fprintf(log_fp, "[%d][%d][%d][%s][%s]\n", thread_id, num_requests, request.m_socket, request.m_szRequest, "File not found");
+  //print num_bytes_read to log
+  else
+    fprintf(log_fp, "[%d][%d][%d][%s][%d]\n", thread_id, num_requests, request.m_socket, request.m_szRequest, log_content);
+  fflush(log_fp);
+  pthread_mutex_unlock(&log_access);
 }
 /*repeatedly accept an incoming connection,
 read the request from the connection,
@@ -99,6 +113,7 @@ void * dispatch(void * arg)
 
 void * worker(void * arg)
 {
+  int thread_id = *arg;
   request_t* request;
   char* content_type;
   int num_requests=0;
@@ -114,11 +129,12 @@ void * worker(void * arg)
     //obtain the file path to read the file associated wot the fd
     char path[MAX_REQUEST_LENGTH];
     strcpy(path, root_directory);
-    strcat(path, request.m_szRequest);
+    strcat(path, request->m_szRequest);
     //open the file to obtain file pointer
     FILE * new_fp;
     if (new_fp = fopen(path, "rb")==NULL){
       printf("failed to open file in path:%s\n", path);
+      log_request(thread_id, num_requests, request, -1);
     }
     //obtain the actual size of file
     struct stat stat_struct;
@@ -134,18 +150,19 @@ void * worker(void * arg)
     num_bytes_read = fread(read_buff, sizeof(char), file_size, new_fp);
     if(num_bytes_read != file_size){
       fprintf(stderr, "failed to read file %s with size %d", path, file_size);
+      log_request(thread_id, num_requests, request, num_bytes_read);
       continue；
     }
     fclose(new_fp);
     //set content_type according to the suffix
-      if(strstr(request.m_szRequest, ".html") || strstr(request.m_szRequest, ".htm") )
-        strcpy(content_type, "text/html");
-      else if (strstr(request.m_szRequest, ".jpg"))
-        strcpy(content_type, "image/jpeg");
-      else if (strstr(request.m_szRequest, ".gif"))
-        strcpy(content_type, "image/gif");
-      else
-        strcpy(content_type, "text/plain");
+    if(strstr(request->m_szRequest, ".html") || strstr(request->m_szRequest, ".htm") )
+      strcpy(content_type, "text/html");
+    else if (strstr(request->m_szRequest, ".jpg"))
+      strcpy(content_type, "image/jpeg");
+    else if (strstr(request->m_szRequest, ".gif"))
+      strcpy(content_type, "image/gif");
+    else
+      strcpy(content_type, "text/plain");
 
     //return result/error to client
     if(return_result(request->m_socket, content_type,request->m_szRequest, 1024)!=0){
@@ -153,7 +170,7 @@ void * worker(void * arg)
     }
     //log
     num_requests++;
-  }
+    log_request(thread_id, num_requests, request, num_bytes_read);
 
   return NULL;
 }
@@ -222,15 +239,10 @@ each consists of threadId, regNum, path
     }
   }
   //loog through each worker to create each worker thread
-  int args[num_workers];
+  int thread_ids[num_workers];
   for (i=0; i<num_workers ; i++){
-    worker_t worker_struct;
-    worker_struct.thread_id = i;
-    strcpy(worker_struct.cwd, argv[2]);
-    worker_struct.num_requests =0;
-
-    args[i]=i;
-    if((error=pthread_create(&workers[i], NULL, worker, (void*)args[i]))!=0){
+    thread_ids[i]=i;
+    if((error=pthread_create(&workers[i], NULL, worker, (void*)thread_ids[i]))!=0){
       fprintf(stderr, "fail to create worker thread %d: %s\n", i+1, strerror(error));
       return -1;
     }
@@ -253,6 +265,9 @@ each consists of threadId, regNum, path
   destroy the mutex
   free any malloc
   */
+
+  fclose(log_fp);
+
   if(pthread_mutex_destroy(&request_queue_access))
     fprintf(stderr, "failed to destroy mutex lock request_queue_access\n");
   if(pthread_mutex_destroy(&log_access))
