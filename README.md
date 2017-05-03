@@ -13,7 +13,7 @@ How to run the program:
 make  
 In server terminal: ./web_server 9000 '/path/CSCI_4061_Project4/testing' 100 100 100      
 In client terminal:     
-wget http://127.0.0.1:9000/image/jpg/29.jpg
+wget http://127.0.0.1:9000/image/jpg/29.jpg           
 wget -i '/path/CSCI_4061_Project4/testing/urls' -O myres
 
 
