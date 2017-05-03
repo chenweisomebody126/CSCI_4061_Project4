@@ -226,7 +226,6 @@ int main(int argc, char **argv)
     fprintf(stderr, "Invalid queue length! It exceeds the maximum length of queue\n");
     return -1;
   }
-  printf("before allocate memory to request queue\n");
   //allocate memory to request queue based on input lenght
   if ((request_queue = (request_t*) malloc(queue_size * sizeof(request_t)))==NULL){
     fprintf(stderr, "failed to allocate memory to the request queue\n");
