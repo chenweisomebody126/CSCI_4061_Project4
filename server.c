@@ -56,7 +56,7 @@ void insert_queue(request_t* request){
   pthread_mutex_unlock(&request_queue_access);
 }
 
-void push_queue(request_t* request){
+void pop_queue(request_t* request){
   pthread_mutex_lock(&request_queue_access);
   while(count == 0){
     pthread_cond_wait(&some_request, &request_queue_access);
@@ -121,7 +121,7 @@ void * worker(void * arg)
   request = (request_t*) malloc(sizeof(request_t));
   //repeatedly monitor the request queue and pick up the request from it
   while (1){
-    push_queue(request);
+    pop_queue(request);
     /*serve the request back to the client by using return_result()
     if there was any problem with accessing the file, use return_error() instead
     */
