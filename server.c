@@ -24,14 +24,6 @@ typedef struct request
   int m_socket;
   char  m_szRequest[MAX_REQUEST_LENGTH];
 } request_t;
-/*Structure for a single worker
-since we need to record
-thread_id,
-number of requests this specific worker thread has handled so far
-file descriptor given by accept_connection for this request
-bytes/error returned
-*/
-
 
 /* The mutex lock */
 pthread_mutex_t request_queue_access= PTHREAD_MUTEX_INITIALIZER;
@@ -84,7 +76,6 @@ void log_request(int thread_id, int num_requests, request_t* request, int log_co
   }
   //print num_bytes_read to log
   else{
-    printf("written into the log\n");
     fprintf(log_fp, "[%d][%d][%d][%s][%d]\n", thread_id, num_requests, request->m_socket, request->m_szRequest, log_content);
   }
   //ensure what just wrote went to the disk
@@ -139,7 +130,6 @@ void * worker(void * arg)
     char path[MAX_REQUEST_LENGTH];
     strcpy(path, root_directory);
     strcat(path, request->m_szRequest);
-    printf("path is %s\n", path);
     //open the file to obtain file pointer
     FILE * new_fp;
     if ((new_fp = fopen(path, "rb"))==NULL){
@@ -184,6 +174,7 @@ void * worker(void * arg)
 
   }
   free(request);
+  free(read_buff);
   return NULL;
 }
 /*run server as following
@@ -197,6 +188,7 @@ int main(int argc, char **argv)
       printf("Error in creating the log file!\n");
       return -1;
   }
+  printf("successfully create the log file\n");
   //first error checking for the arguments in "./web_server port path num_dispatchers num_workers qlen [cache_entries]".
   if(argc != 6 && argc != 7)
   {
